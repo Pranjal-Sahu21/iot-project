@@ -1,0 +1,23 @@
+{
+  "name": "iot-weather-backend",
+  "version": "1.0.0",
+  "description": "Backend API for IoT Weather Station",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "simulate": "node scripts/simulate.js"
+  },
+  "dependencies": {
+    "aedes": "^1.2.0",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "mqtt": "^5.16.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
