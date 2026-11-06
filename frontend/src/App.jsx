@@ -47,10 +47,16 @@ export default function App() {
       />
 
       {/* 2. Main Dashboard Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-10 space-y-6">
+      <main
+        className={`flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-10 ${
+          !latestReading
+            ? 'flex flex-col justify-center items-center'
+            : 'space-y-6'
+        }`}
+      >
         {/* Error State */}
         {latestError && (
-          <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center justify-between text-rose-800">
+          <div className="w-full max-w-xl bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center justify-between text-rose-800 mb-6">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
               <div>
@@ -60,46 +66,46 @@ export default function App() {
             </div>
             <button
               onClick={refreshLatest}
-              className="px-3 py-1.5 rounded-lg text-xs font-normal bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 transition-colors shadow-xs"
+              className="px-3 py-1.5 rounded-lg text-xs font-normal bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Retry
             </button>
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading State: Centered vertically and horizontally */}
         {isLoadingLatest && !latestReading && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
-            <h3 className="text-base text-slate-800 font-normal">
+          <div className="flex flex-col items-center justify-center text-center my-auto py-12">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+            <h3 className="text-lg text-slate-800 font-normal">
               Connecting to Weather Station...
             </h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm">
+            <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-sm">
               Establishing stream connection and fetching active device telemetry.
             </p>
           </div>
         )}
 
-        {/* Empty State: No data yet - waiting for device */}
+        {/* Empty State: Centered vertically and horizontally */}
         {!isLoadingLatest && !latestReading && !latestError && (
-          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm max-w-xl mx-auto my-12">
+          <div className="bg-white rounded-3xl p-10 sm:p-12 text-center border border-slate-200 shadow-sm max-w-xl w-full my-auto">
             <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
               <Radio className="w-7 h-7 animate-pulse" />
             </div>
             <h3 className="text-lg text-slate-900 font-normal">
-              No data yet - waiting for the device
+              No data yet &mdash; waiting for the device
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
-              Waiting for incoming HTTP POST readings from the ESP32 weather station or simulator.
-              Ensure the backend is running and the device is transmitting to{' '}
+              Waiting for incoming telemetry from the ESP32 weather station via MQTT or simulator.
+              Ensure the device is connected to Wi-Fi and transmitting to{' '}
               <code className="bg-slate-100 px-1.5 py-0.5 rounded text-blue-600 text-xs font-mono">
-                /api/readings
+                weather/readings
               </code>.
             </p>
             <div className="mt-6 flex justify-center">
               <button
                 onClick={refreshLatest}
-                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-normal hover:bg-blue-700 transition-colors shadow-sm inline-flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-normal hover:bg-blue-700 transition-colors shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Check Again
               </button>
