@@ -142,32 +142,111 @@ bool ensureMqtt() {
   return connectMqtt();
 }
 
+bool readDHT22Direct(uint8_t pin, float &temp, float &hum) {
+  uint8_t data[5] = {0, 0, 0, 0, 0};
+
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, HIGH);
+  delay(10);
+
+  digitalWrite(pin, LOW);
+  delay(18);
+
+  pinMode(pin, INPUT_PULLUP);
+  delayMicroseconds(40);
+
+  noInterrupts();
+
+  uint32_t t = micros();
+  while (digitalRead(pin) == LOW) {
+    if (micros() - t > 100) {
+      interrupts();
+      return false;
+    }
+  }
+
+  t = micros();
+  while (digitalRead(pin) == HIGH) {
+    if (micros() - t > 100) {
+      interrupts();
+      return false;
+    }
+  }
+
+  for (int i = 0; i < 40; i++) {
+    t = micros();
+    while (digitalRead(pin) == LOW) {
+      if (micros() - t > 100) {
+        interrupts();
+        return false;
+      }
+    }
+
+    uint32_t pulseStart = micros();
+    while (digitalRead(pin) == HIGH) {
+      if (micros() - pulseStart > 100) {
+        interrupts();
+        return false;
+      }
+    }
+    uint32_t pulseLen = micros() - pulseStart;
+
+    if (pulseLen > 42) {
+      data[i / 8] |= (1 << (7 - (i % 8)));
+    }
+  }
+
+  interrupts();
+
+  uint8_t sum = (data[0] + data[1] + data[2] + data[3]) & 0xFF;
+  if (data[4] != sum) {
+    return false;
+  }
+
+  hum = ((data[0] << 8) | data[1]) * 0.1f;
+  int16_t rawT = ((data[2] & 0x7F) << 8) | data[3];
+  if (data[2] & 0x80) rawT = -rawT;
+  temp = rawT * 0.1f;
+
+  if (isnan(temp) || isnan(hum) || temp < -40.0f || temp > 80.0f || hum < 0.0f || hum > 100.0f) {
+    return false;
+  }
+
+  return true;
+}
+
 void readDht(Readings &r) {
   r.dhtOk = false;
-  r.dhtMsg = "not read";
+  r.dhtMsg = "TIMEOUT";
   r.dhtTemp = NAN;
   r.dhtHum = NAN;
 
-  for (uint8_t attempt = 0; attempt < 2 && !r.dhtOk; attempt++) {
-    if (attempt > 0) delay(2100);
+  for (uint8_t attempt = 0; attempt < 3 && !r.dhtOk; attempt++) {
+    if (attempt > 0) delay(2200);
+
+    float t = 0, h = 0;
+    if (readDHT22Direct(DHT_PIN, t, h)) {
+      r.dhtOk = true;
+      r.dhtMsg = "ok";
+      r.dhtTemp = t;
+      r.dhtHum = h;
+      return;
+    }
 
     TempAndHumidity d = dht.getTempAndHumidity();
     DHTesp::DHT_ERROR_t status = dht.getStatus();
 
-    if (status != DHTesp::ERROR_NONE) {
+    if (status == DHTesp::ERROR_NONE && !isnan(d.temperature) && !isnan(d.humidity)) {
+      if (d.temperature >= -40.0f && d.temperature <= 80.0f && d.humidity >= 0.0f && d.humidity <= 100.0f) {
+        r.dhtOk = true;
+        r.dhtMsg = "ok";
+        r.dhtTemp = d.temperature;
+        r.dhtHum = d.humidity;
+        return;
+      }
+    } else {
       r.dhtMsg = dht.getStatusString();
-      continue;
     }
-    if (isnan(d.temperature) || isnan(d.humidity) ||
-        d.temperature < -40.0f || d.temperature > 80.0f ||
-        d.humidity < 0.0f || d.humidity > 100.0f) {
-      r.dhtMsg = "value out of range";
-      continue;
-    }
-    r.dhtOk = true;
-    r.dhtMsg = "ok";
-    r.dhtTemp = d.temperature;
-    r.dhtHum = d.humidity;
   }
 }
 
