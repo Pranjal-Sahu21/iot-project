@@ -2,6 +2,8 @@
 
 A full-stack, enterprise-grade IoT telemetry platform and weather station. Collects real-time temperature, humidity, and barometric pressure data from an ESP32 microcontroller using **MQTT** (port 1883), stores telemetry in an embedded SQLite database configured in Write-Ahead Logging (WAL) mode, and streams live metrics to a responsive React dashboard with real-time sliding Chart.js wave visualizations.
 
+> 📊 **Project Presentation**: Slide deck available as [PDF](presentation/IoT%20Weather%20Station%20-%20Group%208.pdf) and [PowerPoint (PPTX)](presentation/IoT%20Weather%20Station%20-%20Group%208.pptx).
+
 ---
 
 ## System Architecture: Four Functional Tiers
@@ -48,6 +50,9 @@ iot-project/
 │   ├── architecture-diagram.png   # 1090 × 650 px architecture diagram
 │   ├── architecture-diagram.svg   # Scalable vector graphics source
 │   └── architecture-diagram@2x.png# 2180 × 1300 px Retina diagram
+├── presentation/              # Project presentation slide deck
+│   ├── IoT Weather Station - Group 8.pdf
+│   └── IoT Weather Station - Group 8.pptx
 ├── backend/                   # Node.js + Express + SQLite + MQTT + SSE
 │   ├── data/                  # Embedded SQLite database (weather.db, auto-created)
 │   ├── scripts/
