@@ -1,145 +1,141 @@
 # IoT Weather Station Dashboard (MQTT & Real-Time Telemetry)
 
-A full-stack IoT telemetry platform and weather station. Collects real-time temperature, humidity, and barometric pressure data from an ESP32 microcontroller (or simulator) using **MQTT** (port 1883), stores readings in an embedded SQLite database, and streams live telemetry to a responsive React dashboard with Chart.js visualizations.
+A full-stack, enterprise-grade IoT telemetry platform and weather station. Collects real-time temperature, humidity, and barometric pressure data from an ESP32 microcontroller using **MQTT** (port 1883), stores telemetry in an embedded SQLite database configured in Write-Ahead Logging (WAL) mode, and streams live metrics to a responsive React dashboard with real-time sliding Chart.js wave visualizations.
 
 ---
 
-## Architecture Overview
+## System Architecture: Four Functional Tiers
 
-```mermaid
-flowchart LR
-    subgraph Hardware / Simulators
-        A["ESP32 Microcontroller<br/>(PubSubClient)"]
-        S["Telemetry Simulator<br/>(Node.js MQTT)"]
-    end
+![System Architecture: Four Functional Tiers](architecture-diagram.png)
 
-    subgraph Backend [Node.js + Express + SQLite]
-        B["MQTT Broker (Aedes :1883)<br/>& HTTP REST (:3000)"]
-        DB[("SQLite Storage<br/>(weather.db)")]
-        SSE["SSE Broadcaster<br/>(/api/stream)"]
-    end
+The system is organized into four decoupled tiers, ensuring zero network-address-translation (NAT) friction, strict sensor null safety, sub-millisecond database writes, and zero WebSocket connection overhead:
 
-    subgraph Frontend [React + Vite + Tailwind]
-        UI["Web Dashboard<br/>(Chart.js + General Sans)"]
-    end
+### 1. Edge Sensing Tier (ESP32 & Physical Transducers)
+- **ESP32 DevKit V1**: Dual-core Xtensa LX6 @ 240 MHz running FreeRTOS with non-blocking Wi-Fi and MQTT auto-reconnect watchdogs.
+- **DHT22 (AM2302)**: Ambient temperature (-40..80°C) and relative humidity (0..100%) on digital pin **GPIO 4**. Employs an interrupt-safe, microsecond-accurate bit-banged pulse reader (`readDHT22()`) that eliminates timing timeouts without relying on blocking libraries.
+- **BMP180 Barometer**: Atmospheric pressure (300..1100 hPa) on hardware I2C bus: **SDA (GPIO 21)** and **SCL (GPIO 22)** via internal silicon state machine.
+- **Telemetry Ingestion Loop**: Formats telemetry into a 512-byte JSON packet and publishes it over MQTT every 10 seconds. Registers a **Last Will and Testament (LWT)** message on `weather/<device_id>/status` to immediately report disconnections.
 
-    A -- "MQTT Publish: weather/readings" --> B
-    S -- "MQTT Publish: weather/readings" --> B
-    B --> DB
-    B -- "Broadcast SSE" --> SSE
-    SSE -- "Real-Time Stream" --> UI
-```
+### 2. Cloud Broker Tier (Decoupled Pub/Sub Network)
+- **Public Cloud Broker**: Default connection to **HiveMQ** (`broker.hivemq.com:1883`), delivering global internet accessibility with zero router port-forwarding or static IP constraints. Operates reliably across private college networks and NAT firewalls.
+- **Fallback In-Process Broker**: Embedded **Aedes MQTT broker** running on `:1883` for offline, local air-gapped deployments.
+- **Topic Hierarchy**:
+  - Ingestion: `weather/+/readings` (wildcard multi-device ingestion).
+  - Lifecycle: `weather/+/status` (LWT online/offline broadcast).
+  - Single-device legacy topic: `weather/readings`.
 
-### Directory Structure
+### 3. Backend Ingestion Tier (Node.js, Express & Embedded SQLite)
+- **Dual Ingestion Inlets**: Ingests incoming data concurrently from the MQTT subscriber (`mqtt.js`) and the HTTP REST endpoint (`POST /api/readings`).
+- **Strict Null Safety (`validator.js`)**: Normalizes and validates incoming payloads. Sensor timeouts or hardware faults preserve explicit `null` values and error flags instead of corrupting historical metrics as `0`.
+- **SQLite 3 Engine (`better-sqlite3`)**: Runs in **Write-Ahead Logging (WAL)** mode for sub-millisecond synchronous disk writes and non-blocking reads. Automatically executes FIFO pruning to retain the latest 5,000 readings per device.
+- **Server-Sent Events (SSE) Hub (`sse.js`)**: Broadcasts incoming readings instantly to web clients over `GET /api/stream` using standard HTTP/1.1 with 15-second keep-alive heartbeats, eliminating WebSocket handshake overhead.
+
+### 4. Presentation Tier (React 18 + Vite + Tailwind CSS)
+- **Dual-Mode Client Sync (`useLatestReading.js`)**: Browser-native `EventSource` establishes a live SSE pipeline, automatically falling back to 10-second REST polling if the connection drops.
+- **Centered Metric Cards**: Minimalist, high-legibility cards for Temperature, Humidity, and Pressure with sensor status pills (`All OK` vs `Fault`). Strictly renders `—` when sensors report timeouts.
+- **Dynamic Diagnostics**: Real-time 4-bar RSSI Wi-Fi signal monitor, device selector, Last Seen counter, and online/offline connectivity badges.
+- **Sliding Wave Charts (`Chart.js`)**: Dynamic 25-point continuous sliding window with cubic spline interpolation, smooth curve animations, and dual area gradients without canvas flicker.
+- **Telemetry Feed Table**: 5-column balanced table with vertical borders, human-readable timestamps, and screen-centered states for loading spinners and offline notifications.
+- **Branded Design**: Includes custom `CloudSun` SVG favicon (`frontend/public/favicon.svg`) and matching header logo with `Weather Station` page metadata.
+
+---
+
+## Project Structure
 
 ```
 iot-project/
-├── backend/                   # Node.js + Express + Aedes MQTT + better-sqlite3 + SSE
-│   ├── data/                  # SQLite database (weather.db, auto-created)
+├── architecture-diagram.png   # 1090 × 650 px architecture diagram
+├── architecture-diagram.svg   # Scalable vector graphics source
+├── architecture-diagram@2x.png# 2180 × 1300 px Retina diagram
+├── backend/                   # Node.js + Express + SQLite + MQTT + SSE
+│   ├── data/                  # Embedded SQLite database (weather.db, auto-created)
 │   ├── scripts/
-│   │   └── simulate.js        # Realistic MQTT & HTTP telemetry simulator
+│   │   └── simulate.js        # Multi-sensor MQTT/HTTP telemetry simulator
 │   ├── src/
-│   │   ├── db.js              # SQLite schema, pruning & queries
-│   │   ├── mqtt.js            # Embedded Aedes MQTT broker & external broker client
-│   │   ├── sse.js             # Server-Sent Events hub & heartbeats
-│   │   ├── validator.js       # Payload validation & alias normalization
-│   │   └── server.js          # Express app & REST/SSE/MQTT endpoints
+│   │   ├── db.js              # SQLite schema, WAL mode, FIFO pruning & queries
+│   │   ├── mqtt.js            # HiveMQ subscriber & embedded Aedes fallback broker
+│   │   ├── sse.js             # Server-Sent Events hub & 15s heartbeats
+│   │   ├── validator.js       # Payload normalization & strict null safety
+│   │   └── server.js          # Express app, REST routes, SSE & MQTT wiring
 │   ├── .env.example
 │   ├── .gitignore
 │   └── package.json
 ├── firmware/                  # Microcontroller firmware
-│   └── weather_station.ino    # ESP32 Arduino C++ sketch (MQTT PubSubClient)
-├── frontend/                  # React + Vite + Tailwind CSS + Chart.js
+│   └── weather_station.ino    # ESP32 sketch with µs pulse timing (PubSubClient)
+├── frontend/                  # React 18 + Vite + Tailwind CSS + Chart.js
+│   ├── public/
+│   │   └── favicon.svg        # Custom CloudSun weather station logo
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Header.jsx           # Device selector, online badge, RSSI signal
+│   │   │   ├── Header.jsx           # Device selector, online badge, RSSI monitor
 │   │   │   ├── SensorCard.jsx       # Temperature, Humidity, Pressure metric cards
-│   │   │   ├── StatusBadge.jsx      # Sensor OK vs Error badge
-│   │   │   ├── WifiSignal.jsx       # 4-bar RSSI signal strength indicator
-│   │   │   ├── HistoryCharts.jsx    # Real-time sliding Chart.js telemetry charts
-│   │   │   └── ReadingsTable.jsx    # Centered, equally-spaced recent readings feed
+│   │   │   ├── StatusBadge.jsx      # Sensor OK vs Error fault badge
+│   │   │   ├── WifiSignal.jsx       # 4-bar dynamic RSSI signal indicator
+│   │   │   ├── HistoryCharts.jsx    # Real-time sliding Chart.js wave charts
+│   │   │   └── ReadingsTable.jsx    # 5-column live telemetry feed
 │   │   ├── hooks/
 │   │   │   ├── useLatestReading.js  # SSE stream with 10s fallback polling
-│   │   │   └── useHistory.js        # Historical queries & live sliding updates
-│   │   ├── config.js          # Global API base URL configuration
-│   │   ├── App.jsx            # Main dashboard container
+│   │   │   └── useHistory.js        # Historical queries & live sliding window
+│   │   ├── config.js          # API base URL configuration
+│   │   ├── App.jsx            # Centered layout, loader & main dashboard container
 │   │   ├── main.jsx           # React DOM root
-│   │   └── index.css          # Tailwind CSS styles & General Sans typography
-│   ├── index.html
+│   │   └── index.css          # Tailwind CSS styles & typography
+│   ├── index.html             # Document metadata ("Weather Station" & favicon)
 │   ├── vite.config.js
 │   ├── tailwind.config.js
 │   ├── postcss.config.js
 │   ├── .env.example
 │   ├── .gitignore
 │   └── package.json
-├── .gitignore                 # Root repository ignore rules
+├── .gitignore
 └── README.md
 ```
-
----
-
-## Features
-
-- **Primary Transport - MQTT**:
-  - Embedded **Aedes MQTT Broker** running on standard port `1883` out of the box — zero external tools or Mosquitto installations required.
-  - Standard telemetry topic: `weather/readings` (or `weather/<device_id>/telemetry`).
-  - Supports external MQTT brokers (e.g., Mosquitto, EMQX, HiveMQ) by simply setting `MQTT_BROKER_URL` in `.env`.
-  - HTTP `POST /api/readings` remains active as a simultaneous fallback.
-- **Active Sensors**:
-  - **DHT22**: Ambient Temperature (°C) and Relative Humidity (%).
-  - **BMP180**: Barometric Atmospheric Pressure (hPa).
-- **Strict Null Safety**: When a sensor reports a hardware fault or timeout, numeric readings remain `null` and display as `—` rather than corrupting data as `0`.
-- **High-Performance Storage**: Embedded SQLite database (`better-sqlite3`) configured with Write-Ahead Logging (`WAL`) mode and automatic per-device pruning (retains latest 5,000 readings).
-- **Real-Time Streaming**: Server-Sent Events (`GET /api/stream`) with 15-second heartbeat keep-alives and automatic fallback to 10-second polling if disconnected.
-- **Sliding Window Charts**: Continuous sliding wave charts powered by Chart.js with smooth curves and gradient fills, dynamically tracking the latest 25 readings.
-- **Clean Minimalist Dashboard**: Pure light design, General Sans typography (`font-normal`), centered card metrics, and equally-spaced table columns with vertical grid dividers.
-- **Hardware Firmware Included**: Production-ready Arduino C++ sketch for ESP32 with automatic Wi-Fi and MQTT reconnection, sensor error handling, and JSON telemetry publication.
 
 ---
 
 ## Hardware Setup & Pinout
 
 ### Components
-- **ESP32 DevKit V1** (or compatible ESP32 board)
-- **DHT22** (AM2302) Temperature & Humidity Sensor
-- **BMP180** (or BMP085) I2C Barometric Pressure Sensor
-- Pull-up resistor (4.7kΩ – 10kΩ) for DHT22 data line (if not using a 3-pin modular board)
+- **ESP32 DevKit V1** (Xtensa LX6 30-pin or 38-pin module)
+- **DHT22 (AM2302)** Digital Temperature & Humidity Sensor
+- **BMP180 (GY-68)** I2C Barometric Pressure Sensor
+- Pull-up resistor (4.7kΩ – 10kΩ) for DHT22 data line (if using bare sensor)
 
-### Wiring Diagram
+### Wiring Table
 
-| Sensor | Sensor Pin | ESP32 GPIO | Notes |
+| Transducer | Pin | ESP32 GPIO | Description / Protocol |
 |---|---|---|---|
-| **DHT22** | VCC | 3V3 / 5V | Powers the sensor |
-| **DHT22** | DATA | GPIO 4 | Digital input (requires pull-up to 3V3) |
-| **DHT22** | GND | GND | Ground |
-| **BMP180** | VCC | 3V3 | Power (3.3V recommended) |
-| **BMP180** | GND | GND | Ground |
-| **BMP180** | SCL | GPIO 22 | I2C Clock |
-| **BMP180** | SDA | GPIO 21 | I2C Data |
+| **DHT22** | VCC | 3V3 / 5V | Sensor power |
+| **DHT22** | DATA | **GPIO 4** | Single-bus bidirectional data (with 4.7kΩ pull-up) |
+| **DHT22** | GND | GND | Ground reference |
+| **BMP180** | VCC | 3V3 | Power (3.3V logic level) |
+| **BMP180** | GND | GND | Ground reference |
+| **BMP180** | SCL | **GPIO 22** | Hardware I2C Clock |
+| **BMP180** | SDA | **GPIO 21** | Hardware I2C Data |
 
 ---
 
 ## Configuration & Environment Variables
 
 ### Backend (`backend/.env`)
-Copy `backend/.env.example` to `backend/.env`:
+Create `backend/.env` from `backend/.env.example`:
 ```env
 # HTTP Port for Express REST & SSE (default: 3000)
 PORT=3000
 
-# MQTT Broker URL (default: mqtt://broker.hivemq.com:1883 matching firmware)
-# Set to "embedded" to run an in-process local broker on MQTT_PORT instead
+# MQTT Broker URL (default: mqtt://broker.hivemq.com:1883)
+# To use the embedded in-process broker instead, set to "embedded"
 MQTT_BROKER_URL=mqtt://broker.hivemq.com:1883
 
 # Port used when running in embedded broker mode (default: 1883)
 MQTT_PORT=1883
 
-# Optional API key for securing POST /api/readings
+# Optional API key for authenticating POST /api/readings
 API_KEY=
 ```
 
 ### Frontend (`frontend/.env`)
-Copy `frontend/.env.example` to `frontend/.env`:
+Create `frontend/.env` from `frontend/.env.example`:
 ```env
 # Backend API base URL (default: http://localhost:3000)
 VITE_API_URL=http://localhost:3000
@@ -151,39 +147,33 @@ VITE_API_URL=http://localhost:3000
 
 ### Step 1: Install Dependencies
 
-From the repository root:
-
 ```bash
-# Install backend dependencies (Express + SQLite + MQTT + SSE)
+# Install backend dependencies (Express, better-sqlite3, mqtt, aedes)
 cd backend
 npm install
 
-# Install frontend dependencies (React + Vite + Chart.js)
+# Install frontend dependencies (React, Vite, Tailwind, Chart.js)
 cd ../frontend
 npm install
 ```
 
 ---
 
-### Step 2: Start the Backend (API + MQTT Bridge)
+### Step 2: Start the Backend Service
 
 ```bash
 cd backend
 npm run dev
 ```
-*(Or `npm start` for production mode).*
-- The HTTP server starts at **http://localhost:3000**.
-- The MQTT client automatically connects to **mqtt://broker.hivemq.com:1883** and subscribes to:
-  - `weather/+/readings`
-  - `weather/+/status`
-  - `weather/readings`
+*(Or run `npm start` for production).*
+- Express REST API & SSE broadcaster runs at: **http://localhost:3000**
+- MQTT subscriber automatically connects to **mqtt://broker.hivemq.com:1883** and subscribes to `weather/+/readings` and `weather/+/status`.
 
 ---
 
 ### Step 3: Start the Frontend Dashboard
 
 In a second terminal:
-
 ```bash
 cd frontend
 npm run dev
@@ -192,97 +182,92 @@ Open **http://localhost:5173** in your web browser.
 
 ---
 
-### Step 4: Transmit Telemetry
+### Step 4: Stream Telemetry
 
-You can stream data to the platform using any of the following methods:
-
-#### Option A: Run the Built-in MQTT Simulator (No Hardware Required)
+#### Option A: Built-in Telemetry Simulator (No Hardware Needed)
 In a third terminal:
 ```bash
 cd backend
 npm run simulate
 ```
-The simulator connects to the HiveMQ broker and publishes JSON telemetry to `weather/esp32-weather-01/readings` every 5 seconds.
+The simulator publishes realistic fluctuating temperature, humidity, pressure, and RSSI telemetry to `weather/esp32-weather-01/readings` over MQTT every 5 seconds.
 
-#### Option B: Flash ESP32 Hardware Firmware
+#### Option B: Flash ESP32 Microcontroller
 1. Open [`firmware/weather_station.ino`](firmware/weather_station.ino) in Arduino IDE or PlatformIO.
-2. Install the required Arduino libraries via Library Manager:
+2. Install the required libraries via the Arduino Library Manager:
    - `PubSubClient` by Nick O'Leary
-   - `DHT sensor library for ESPx` by beegee-tokyo
    - `Adafruit BMP085 Library` by Adafruit
-3. Set your Wi-Fi credentials:
+3. Configure your Wi-Fi credentials in the sketch:
    ```cpp
    #define WIFI_SSID     "YOUR_WIFI_SSID"
    #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
    #define MQTT_HOST     "broker.hivemq.com"
    #define MQTT_PORT     1883
    ```
-4. Upload to your ESP32 board and open the Serial Monitor at `115200` baud.
+4. Flash the sketch to your ESP32 board and open the Serial Monitor at **115200 baud**.
 
 ---
 
-## Testing MQTT Manually
+## Manual Telemetry Testing
 
-### Using Mosquitto CLI
-If you have `mosquitto_pub` installed:
+### Via MQTT CLI (`mosquitto_pub`)
 ```bash
-mosquitto_pub -h localhost -p 1883 -t "weather/readings" -m '{
+mosquitto_pub -h broker.hivemq.com -p 1883 -t "weather/esp32-weather-01/readings" -m '{
   "device_id": "esp32-weather-01",
   "uptime_s": 120,
-  "wifi_rssi": -52,
-  "dht22": { "status": "ok", "temperature_c": 24.2, "humidity_pct": 58.4 },
-  "bmp180": { "status": "ok", "pressure_hpa": 1013.25 }
+  "wifi_rssi": -65,
+  "dht22": { "status": "ok", "temperature_c": 24.5, "humidity_pct": 52.0 },
+  "bmp180": { "status": "ok", "pressure_hpa": 1013.27 }
 }'
 ```
 
-### Using HTTP POST (`curl` / PowerShell Fallback)
-The backend also accepts readings directly over HTTP:
+### Via HTTP REST (`curl` / PowerShell)
 ```bash
 curl -X POST http://localhost:3000/api/readings \
   -H "Content-Type: application/json" \
   -d '{
   "device_id": "esp32-weather-01",
   "uptime_s": 120,
-  "wifi_rssi": -52,
-  "dht22": { "status": "ok", "temperature_c": 24.2, "humidity_pct": 58.4 },
-  "bmp180": { "status": "ok", "pressure_hpa": 1013.25 }
+  "wifi_rssi": -65,
+  "dht22": { "status": "ok", "temperature_c": 24.5, "humidity_pct": 52.0 },
+  "bmp180": { "status": "ok", "pressure_hpa": 1013.27 }
 }'
 ```
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:3000/api/readings" -Method Post -ContentType "application/json" -Body '{"device_id":"esp32-weather-01","uptime_s":120,"wifi_rssi":-52,"dht22":{"status":"ok","temperature_c":24.2,"humidity_pct":58.4},"bmp180":{"status":"ok","pressure_hpa":1013.25}}'
+Invoke-RestMethod -Uri "http://localhost:3000/api/readings" -Method Post -ContentType "application/json" -Body '{"device_id":"esp32-weather-01","uptime_s":120,"wifi_rssi":-65,"dht22":{"status":"ok","temperature_c":24.5,"humidity_pct":52.0},"bmp180":{"status":"ok","pressure_hpa":1013.27}}'
 ```
 
 ---
 
-## API Reference
+## REST & Streaming API Reference
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/health` | `GET` | Health check (`{ "ok": true }`) |
-| `/api/readings` | `POST` | Ingests a new sensor reading payload via HTTP |
-| `/api/readings/latest?device_id=` | `GET` | Returns the most recent reading for a device |
-| `/api/readings?device_id=&limit=&from=&to=` | `GET` | Historical readings list (oldest to newest, max 1000) |
+| `/api/health` | `GET` | Health check probe (`{ "ok": true }`) |
+| `/api/readings` | `POST` | Ingests a new telemetry payload via HTTP |
+| `/api/readings/latest?device_id=` | `GET` | Retrieves the most recent reading for a given device |
+| `/api/readings?device_id=&limit=&from=&to=` | `GET` | Historical telemetry records (chronological order, max 1000) |
 | `/api/devices` | `GET` | List of registered devices with last seen timestamp and online status |
-| `/api/stream` | `GET` | Server-Sent Events stream for live real-time dashboard updates |
+| `/api/stream` | `GET` | Real-time Server-Sent Events (SSE) telemetry broadcast stream |
 
-### Sample JSON Telemetry Payload
+### Standard JSON Telemetry Format
 
 ```json
 {
-  "id": 142,
+  "id": 2214,
   "device_id": "esp32-weather-01",
-  "received_at": "2026-11-06T00:20:00.000Z",
+  "received_at": "2026-11-07T11:31:00.000Z",
   "uptime_s": 3600,
-  "wifi_rssi": -55,
+  "wifi_rssi": -68,
   "dht22": {
     "status": "ok",
     "temperature_c": 24.5,
-    "humidity_pct": 52.1
+    "humidity_pct": 52.0
   },
   "bmp180": {
     "status": "ok",
-    "pressure_hpa": 1014.2,
+    "pressure_hpa": 1013.27,
     "temperature_c": 24.5
   }
 }
@@ -292,11 +277,11 @@ Invoke-RestMethod -Uri "http://localhost:3000/api/readings" -Method Post -Conten
 
 ## Production Build
 
-To build the frontend for production deployment:
+To compile and bundle the React frontend for production deployment:
 
 ```bash
 cd frontend
 npm run build
 ```
 
-The compiled assets will be output to `frontend/dist/`.
+The optimized static assets will be output to `frontend/dist/`.
