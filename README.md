@@ -2,13 +2,23 @@
 
 A full-stack, enterprise-grade IoT telemetry platform and weather station. Collects real-time temperature, humidity, and barometric pressure data from an ESP32 microcontroller using **MQTT** (port 1883), stores telemetry in an embedded SQLite database configured in Write-Ahead Logging (WAL) mode, and streams live metrics to a responsive React dashboard with real-time sliding Chart.js wave visualizations.
 
-> 📊 **Project Presentation**: Slide deck available as [PDF](presentation/IoT%20Weather%20Station%20-%20Group%208.pdf) and [PowerPoint (PPTX)](presentation/IoT%20Weather%20Station%20-%20Group%208.pptx).
+> 📊 **Project Presentation**: Slide deck available as [PDF](presentation/iot-weather-station.pdf) and [PowerPoint (PPTX)](presentation/iot-weather-station.pptx).
+
+---
+
+## Dashboard Preview
+
+<img src="images/mobile_dashboard.png" alt="Mobile Dashboard Preview" width="100%" />
+
+<br/><br/>
+
+<img src="images/tablet_dashboard.png" alt="Tablet Dashboard Preview" width="100%" />
 
 ---
 
 ## System Architecture: Four Functional Tiers
 
-![System Architecture: Four Functional Tiers](diagrams/architecture-diagram.png)
+![System Architecture: Four Functional Tiers](images/architecture-diagram.png)
 
 The system is organized into four decoupled tiers, ensuring zero network-address-translation (NAT) friction, strict sensor null safety, sub-millisecond database writes, and zero WebSocket connection overhead:
 
@@ -46,13 +56,15 @@ The system is organized into four decoupled tiers, ensuring zero network-address
 
 ```
 iot-project/
-├── diagrams/                  # System architecture presentation assets
+├── images/                    # Architecture diagrams & UI screenshots
 │   ├── architecture-diagram.png   # 1090 × 650 px architecture diagram
 │   ├── architecture-diagram.svg   # Scalable vector graphics source
-│   └── architecture-diagram@2x.png# 2180 × 1300 px Retina diagram
+│   ├── architecture-diagram@2x.png# 2180 × 1300 px Retina diagram
+│   ├── tablet_dashboard.png       # Tablet Dashboard Preview
+│   └── mobile_dashboard.png       # Mobile Dashboard Preview
 ├── presentation/              # Project presentation slide deck
-│   ├── IoT Weather Station - Group 8.pdf
-│   └── IoT Weather Station - Group 8.pptx
+│   ├── iot-weather-station.pdf
+│   └── iot-weather-station.pptx
 ├── backend/                   # Node.js + Express + SQLite + MQTT + SSE
 │   ├── data/                  # Embedded SQLite database (weather.db, auto-created)
 │   ├── scripts/
