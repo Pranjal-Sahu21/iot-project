@@ -6,7 +6,7 @@ A full-stack, enterprise-grade IoT telemetry platform and weather station. Colle
 
 ## System Architecture: Four Functional Tiers
 
-![System Architecture: Four Functional Tiers](architecture-diagram.png)
+![System Architecture: Four Functional Tiers](diagrams/architecture-diagram.png)
 
 The system is organized into four decoupled tiers, ensuring zero network-address-translation (NAT) friction, strict sensor null safety, sub-millisecond database writes, and zero WebSocket connection overhead:
 
@@ -44,9 +44,10 @@ The system is organized into four decoupled tiers, ensuring zero network-address
 
 ```
 iot-project/
-├── architecture-diagram.png   # 1090 × 650 px architecture diagram
-├── architecture-diagram.svg   # Scalable vector graphics source
-├── architecture-diagram@2x.png# 2180 × 1300 px Retina diagram
+├── diagrams/                  # System architecture presentation assets
+│   ├── architecture-diagram.png   # 1090 × 650 px architecture diagram
+│   ├── architecture-diagram.svg   # Scalable vector graphics source
+│   └── architecture-diagram@2x.png# 2180 × 1300 px Retina diagram
 ├── backend/                   # Node.js + Express + SQLite + MQTT + SSE
 │   ├── data/                  # Embedded SQLite database (weather.db, auto-created)
 │   ├── scripts/
@@ -60,8 +61,10 @@ iot-project/
 │   ├── .env.example
 │   ├── .gitignore
 │   └── package.json
-├── firmware/                  # Microcontroller firmware
-│   └── weather_station.ino    # ESP32 sketch with µs pulse timing (PubSubClient)
+├── wokwi/                     # ESP32 firmware & Wokwi simulation
+│   ├── sketch.ino             # ESP32 sketch with µs pulse timing (PubSubClient)
+│   ├── diagram.json           # Wokwi circuit schematic wiring configuration
+│   └── libraries.txt          # Microcontroller component libraries list
 ├── frontend/                  # React 18 + Vite + Tailwind CSS + Chart.js
 │   ├── public/
 │   │   └── favicon.svg        # Custom CloudSun weather station logo
@@ -193,7 +196,7 @@ npm run simulate
 The simulator publishes realistic fluctuating temperature, humidity, pressure, and RSSI telemetry to `weather/esp32-weather-01/readings` over MQTT every 5 seconds.
 
 #### Option B: Flash ESP32 Microcontroller
-1. Open [`firmware/weather_station.ino`](firmware/weather_station.ino) in Arduino IDE or PlatformIO.
+1. Open [`wokwi/sketch.ino`](wokwi/sketch.ino) in Arduino IDE, PlatformIO, or Wokwi.
 2. Install the required libraries via the Arduino Library Manager:
    - `PubSubClient` by Nick O'Leary
    - `Adafruit BMP085 Library` by Adafruit
